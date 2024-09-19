@@ -30,7 +30,11 @@ from google.cloud.spanner_v1._helpers import (
     _metadata_with_prefix,
     _metadata_with_leader_aware_routing,
 )
-from google.cloud.spanner_v1._opentelemetry_tracing import trace_call
+from google.cloud.spanner_v1._opentelemetry_tracing import (
+    get_current_span,
+    set_span_error_and_record_exception,
+    trace_call,
+)
 from google.cloud.spanner_v1.batch import Batch
 from google.cloud.spanner_v1.snapshot import Snapshot
 from google.cloud.spanner_v1.transaction import Transaction
@@ -113,6 +117,10 @@ class Session(object):
         :raises ValueError: if session is not yet created
         """
         if self._session_id is None:
+            err = "No session available"
+            current_span = get_current_span()
+            current_span.add_event(err)
+            set_span_error_and_record_exception(current_span, err)
             raise ValueError("No session ID set by back-end")
         return self._database.name + "/sessions/" + self._session_id
 
@@ -124,8 +132,14 @@ class Session(object):
 
         :raises ValueError: if :attr:`session_id` is already set.
         """
+        current_span = get_current_span()
+        current_span.add_event("Creating Session")
+
         if self._session_id is not None:
-            raise ValueError("Session ID already set by back-end")
+            err = "Session ID already set by back-end"
+            current_span.add_event(err)
+            set_span_error_and_record_exception(current_span, err)
+            raise ValueError(err)
         api = self._database.spanner_api
         metadata = _metadata_with_prefix(self._database.name)
         if self._database._route_to_leader_enabled:
@@ -148,6 +162,7 @@ class Session(object):
                 metadata=metadata,
             )
         self._session_id = session_pb.name.split("/")[-1]
+        current_span.add_event("Using Session", {"id": self._session_id})
 
     def exists(self):
         """Test for the existence of this session.

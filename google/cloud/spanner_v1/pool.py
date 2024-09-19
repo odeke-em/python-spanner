@@ -16,6 +16,7 @@
 
 import datetime
 import queue
+import time
 
 from google.cloud.exceptions import NotFound
 from google.cloud.spanner_v1 import BatchCreateSessionsRequest
@@ -23,6 +24,9 @@ from google.cloud.spanner_v1 import Session
 from google.cloud.spanner_v1._helpers import (
     _metadata_with_prefix,
     _metadata_with_leader_aware_routing,
+)
+from google.cloud.spanner_v1._opentelemetry_tracing import (
+    get_current_span,
 )
 from warnings import warn
 
@@ -199,13 +203,32 @@ class FixedSizePool(AbstractSessionPool):
                 _metadata_with_leader_aware_routing(database._route_to_leader_enabled)
             )
         self._database_role = self._database_role or self._database.database_role
+        requested_session_count = self.size - self._sessions.qsize()
         request = BatchCreateSessionsRequest(
             database=database.name,
-            session_count=self.size - self._sessions.qsize(),
+            session_count=requested_session_count,
             session_template=Session(creator_role=self.database_role),
         )
 
+        current_span = get_current_span()
+        if requested_session_count > 0:
+            current_span.add_event(
+                f"Requesting {requested_session_count} sessions",
+                {"kind": "fixed_size_pool"},
+            )
+
+        if self._sessions.full():
+            current_span.add_event(
+                "Session pool is already full", {"kind": "fixed_size_pool"}
+            )
+            return
+
+        returned_session_count = 0
         while not self._sessions.full():
+            current_span.add_event(
+                f"Creating {request.session_count} sessions",
+                {"kind": "fixed_size_pool"},
+            )
             resp = api.batch_create_sessions(
                 request=request,
                 metadata=metadata,
@@ -214,6 +237,12 @@ class FixedSizePool(AbstractSessionPool):
                 session = self._new_session()
                 session._session_id = session_pb.name.split("/")[-1]
                 self._sessions.put(session)
+                returned_session_count += 1
+
+        current_span.add_event(
+            f"Requested for {requested_session_count}, returned {returned_session_count}",
+            {"kind": "fixed_size_pool"},
+        )
 
     def get(self, timeout=None):
         """Check a session out from the pool.
@@ -229,12 +258,23 @@ class FixedSizePool(AbstractSessionPool):
         if timeout is None:
             timeout = self.default_timeout
 
+        start_time = time.time()
+        current_span = get_current_span()
+        current_span.add_event("Acquiring session", {"kind": type(self).__name__})
         session = self._sessions.get(block=True, timeout=timeout)
 
         if not session.exists():
             session = self._database.session()
             session.create()
 
+        current_span.add_event(
+            "Acquired session",
+            {
+                "time.elapsed": time.time() - start_time,
+                "session.id": session.session_id,
+                "kind": type(self).__name__,
+            },
+        )
         return session
 
     def put(self, session):
@@ -307,6 +347,10 @@ class BurstyPool(AbstractSessionPool):
         :returns: an existing session from the pool, or a newly-created
                   session.
         """
+        start_time = time.time()
+        current_span = get_current_span()
+        current_span.add_event("Acquiring session", {"kind": type(self).__name__})
+
         try:
             session = self._sessions.get_nowait()
         except queue.Empty:
@@ -316,6 +360,15 @@ class BurstyPool(AbstractSessionPool):
             if not session.exists():
                 session = self._new_session()
                 session.create()
+            else:
+                current_span.add_event(
+                    "Cache hit: has usable session",
+                    {
+                        "id": session.session_id,
+                        "kind": type(self).__name__,
+                    },
+                )
+
         return session
 
     def put(self, session):
@@ -422,6 +475,18 @@ class PingingPool(AbstractSessionPool):
             session_template=Session(creator_role=self.database_role),
         )
 
+        requested_session_count = request.session_count
+        current_span = get_current_span()
+        current_span.add_event(f"Requesting {requested_session_count} sessions")
+
+        if created_session_count >= self.size:
+            current_span.add_event(
+                "Created no new sessions as sessionPool is full",
+                {"kind": type(self).__name__},
+            )
+            return
+
+        returned_session_count = 0
         while created_session_count < self.size:
             resp = api.batch_create_sessions(
                 request=request,
@@ -431,7 +496,16 @@ class PingingPool(AbstractSessionPool):
                 session = self._new_session()
                 session._session_id = session_pb.name.split("/")[-1]
                 self.put(session)
+                returned_session_count += 1
+
             created_session_count += len(resp.session)
+
+        current_span.add_event(
+            "Requested for {requested_session_count} sessions, return {returned_session_count}",
+            {
+                "kind": "pinging_pool",
+            },
+        )
 
     def get(self, timeout=None):
         """Check a session out from the pool.
@@ -447,6 +521,12 @@ class PingingPool(AbstractSessionPool):
         if timeout is None:
             timeout = self.default_timeout
 
+        start_time = time.time()
+        current_span = get_current_span()
+        current_span.add_event(
+            "Waiting for a session to become available", {"kind": "pinging_pool"}
+        )
+
         ping_after, session = self._sessions.get(block=True, timeout=timeout)
 
         if _NOW() > ping_after:
@@ -457,6 +537,14 @@ class PingingPool(AbstractSessionPool):
                 session = self._new_session()
                 session.create()
 
+        current_span.add_event(
+            "Acquired session",
+            {
+                "time.elapsed": time.time() - start_time,
+                "session.id": session.session_id,
+                "kind": "pinging_pool",
+            },
+        )
         return session
 
     def put(self, session):
