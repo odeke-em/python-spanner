@@ -189,7 +189,7 @@ class TestSession(OpenTelemetryBase):
         database.spanner_api = gax_api
         session = self._make_one(database, database_role=self.DATABASE_ROLE)
 
-        with trace_call("TestSessionSpan", session):
+        with trace_call("TestSessionSpan", session) as span:
             session.create()
 
             self.assertEqual(session.session_id, self.SESSION_ID)
@@ -209,8 +209,8 @@ class TestSession(OpenTelemetryBase):
                 ],
             )
 
-        wantEventNames = ["Acquiring session", "Creating Session", "Using Session"]
-        self.assertSpanEvents("CloudSpanner.CreateSession", wantEventNames)
+            wantEventNames = ["Creating Session", "Using Session"]
+            self.assertSpanEvents("TestSessionSpan", wantEventNames, span)
 
     def test_create_wo_database_role(self):
         from google.cloud.spanner_v1 import CreateSessionRequest

@@ -101,4 +101,7 @@ class OpenTelemetryBase(unittest.TestCase):
                 span = span_list[0]
 
             self.assertEqual(span.name, name)
-            self.assertEqual(len(span.events), len(wantEventNames))
+            actualEventNames = []
+            for event in span.events:
+                actualEventNames.append(event.name)
+            self.assertEqual(actualEventNames, wantEventNames)
