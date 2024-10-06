@@ -203,46 +203,47 @@ class FixedSizePool(AbstractSessionPool):
                 _metadata_with_leader_aware_routing(database._route_to_leader_enabled)
             )
         self._database_role = self._database_role or self._database.database_role
-        requested_session_count = self.size - self._sessions.qsize()
-        request = BatchCreateSessionsRequest(
-            database=database.name,
-            session_count=requested_session_count,
-            session_template=Session(creator_role=self.database_role),
-        )
 
-        current_span = get_current_span()
-        if requested_session_count > 0:
-            current_span.add_event(
-                f"Requesting {requested_session_count} sessions",
+        with trace_call("CloudSpanner.BatchCreateSessions", self) as span:
+            requested_session_count = self.size - self._sessions.qsize()
+            request = BatchCreateSessionsRequest(
+                database=database.name,
+                session_count=requested_session_count,
+                session_template=Session(creator_role=self.database_role),
+            )
+
+            if requested_session_count > 0:
+                current_span.add_event(
+                    f"Requesting {requested_session_count} sessions",
+                    {"kind": "fixed_size_pool"},
+                )
+
+            if self._sessions.full():
+                span.add_event(
+                    "Session pool is already full", {"kind": "fixed_size_pool"}
+                )
+                return
+
+            returned_session_count = 0
+            while not self._sessions.full():
+                span.add_event(
+                    f"Creating {request.session_count} sessions",
+                    {"kind": "fixed_size_pool"},
+                )
+                resp = api.batch_create_sessions(
+                    request=request,
+                    metadata=metadata,
+                )
+                for session_pb in resp.session:
+                    session = self._new_session()
+                    session._session_id = session_pb.name.split("/")[-1]
+                    self._sessions.put(session)
+                    returned_session_count += 1
+
+            span.add_event(
+                f"Requested for {requested_session_count}, returned {returned_session_count}",
                 {"kind": "fixed_size_pool"},
             )
-
-        if self._sessions.full():
-            current_span.add_event(
-                "Session pool is already full", {"kind": "fixed_size_pool"}
-            )
-            return
-
-        returned_session_count = 0
-        while not self._sessions.full():
-            current_span.add_event(
-                f"Creating {request.session_count} sessions",
-                {"kind": "fixed_size_pool"},
-            )
-            resp = api.batch_create_sessions(
-                request=request,
-                metadata=metadata,
-            )
-            for session_pb in resp.session:
-                session = self._new_session()
-                session._session_id = session_pb.name.split("/")[-1]
-                self._sessions.put(session)
-                returned_session_count += 1
-
-        current_span.add_event(
-            f"Requested for {requested_session_count}, returned {returned_session_count}",
-            {"kind": "fixed_size_pool"},
-        )
 
     def get(self, timeout=None):
         """Check a session out from the pool.
