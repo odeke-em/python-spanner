@@ -162,7 +162,6 @@ class Session(object):
                 metadata=metadata,
             )
         self._session_id = session_pb.name.split("/")[-1]
-        current_span.add_event("Using Session", {"id": self._session_id})
 
     def exists(self):
         """Test for the existence of this session.

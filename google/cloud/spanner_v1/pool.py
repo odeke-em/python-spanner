@@ -260,21 +260,22 @@ class FixedSizePool(AbstractSessionPool):
 
         start_time = time.time()
         current_span = get_current_span()
-        current_span.add_event("Acquiring session", {"kind": type(self).__name__})
+        span_event_attributes = {"kind": type(self).__name__}
+        current_span.add_event("Acquiring session", span_event_attributes)
         session = self._sessions.get(block=True, timeout=timeout)
+        span_event_attributes["session.id"] = session.session_id
 
         if not session.exists():
+            current_span.add_event(
+                "Session is not valid, recreating it", span_event_attributes
+            )
             session = self._database.session()
             session.create()
+            span_event_attributes["id"] = self._session_id
+            current_span.add_event("Using Session", span_event_attributes)
 
-        current_span.add_event(
-            "Acquired session",
-            {
-                "time.elapsed": time.time() - start_time,
-                "session.id": session.session_id,
-                "kind": type(self).__name__,
-            },
-        )
+        span_event_attributes["time.elapsed"] = time.time() - start_time
+        current_span.add_event("Acquired session", span_event_attributes)
         return session
 
     def put(self, session):
@@ -347,27 +348,29 @@ class BurstyPool(AbstractSessionPool):
         :returns: an existing session from the pool, or a newly-created
                   session.
         """
-        start_time = time.time()
         current_span = get_current_span()
-        current_span.add_event("Acquiring session", {"kind": type(self).__name__})
+        span_event_attributes = {"kind": type(self).__name__}
+        current_span.add_event("Acquiring session", span_event_attributes)
 
         try:
+            current_span.add_event(
+                "Waiting for a session to become available", span_event_attributes
+            )
             session = self._sessions.get_nowait()
         except queue.Empty:
+            current_span.add_event("No session available", span_event_attributes)
             session = self._new_session()
             session.create()
         else:
             if not session.exists():
+                current_span.add_event(
+                    "Session is not valid, recreating it", span_event_attributes
+                )
                 session = self._new_session()
                 session.create()
-            else:
-                current_span.add_event(
-                    "Cache hit: has usable session",
-                    {
-                        "id": session.session_id,
-                        "kind": type(self).__name__,
-                    },
-                )
+
+        span_event_attributes["id"] = session.session_id
+        current_span.add_event("Using session", span_event_attributes)
 
         return session
 
