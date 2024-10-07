@@ -27,6 +27,7 @@ from google.cloud.spanner_v1._helpers import (
 )
 from google.cloud.spanner_v1._opentelemetry_tracing import (
     get_current_span,
+    trace_call,
 )
 from warnings import warn
 
@@ -213,7 +214,7 @@ class FixedSizePool(AbstractSessionPool):
             )
 
             if requested_session_count > 0:
-                current_span.add_event(
+                span.add_event(
                     f"Requesting {requested_session_count} sessions",
                     {"kind": "fixed_size_pool"},
                 )
