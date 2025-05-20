@@ -249,7 +249,7 @@ class Batch(_BatchBase):
             trace_attributes,
             observability_options=observability_options,
             metadata=metadata,
-        ), MetricsCapture():
+        ) as span, MetricsCapture():
 
             def wrapped_method(*args, **kwargs):
                 method = functools.partial(
@@ -262,6 +262,7 @@ class Batch(_BatchBase):
                         getattr(database, "_next_nth_request", 0),
                         1,
                         metadata,
+                        span,
                     ),
                 )
                 return method(*args, **kwargs)
@@ -385,7 +386,7 @@ class MutationGroups(_SessionWrapper):
             trace_attributes,
             observability_options=observability_options,
             metadata=metadata,
-        ), MetricsCapture():
+        ) as span, MetricsCapture():
             attempt = AtomicCounter(0)
             nth_request = database._next_nth_request
 
@@ -397,6 +398,7 @@ class MutationGroups(_SessionWrapper):
                         nth_request,
                         attempt.increment(),
                         metadata,
+                        span,
                     ),
                 )(*args, **kwargs)
 

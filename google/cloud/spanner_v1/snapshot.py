@@ -104,11 +104,14 @@ def _restart_on_unavailable(
                     attributes,
                     observability_options=observability_options,
                     metadata=metadata,
-                ), MetricsCapture():
+                ) as span, MetricsCapture():
                     iterator = method(
                         request=request,
                         metadata=request_id_manager.metadata_with_request_id(
-                            nth_request, attempt, metadata
+                            nth_request,
+                            attempt,
+                            metadata,
+                            span,
                         ),
                     )
             for item in iterator:
@@ -133,7 +136,7 @@ def _restart_on_unavailable(
                 attributes,
                 observability_options=observability_options,
                 metadata=metadata,
-            ), MetricsCapture():
+            ) as span, MetricsCapture():
                 request.resume_token = resume_token
                 if transaction is not None:
                     transaction_selector = transaction._make_txn_selector()
@@ -142,7 +145,10 @@ def _restart_on_unavailable(
                 iterator = method(
                     request=request,
                     metadata=request_id_manager.metadata_with_request_id(
-                        nth_request, attempt, metadata
+                        nth_request,
+                        attempt,
+                        metadata,
+                        span,
                     ),
                 )
             continue
@@ -160,7 +166,7 @@ def _restart_on_unavailable(
                 attributes,
                 observability_options=observability_options,
                 metadata=metadata,
-            ), MetricsCapture():
+            ) as span, MetricsCapture():
                 request.resume_token = resume_token
                 if transaction is not None:
                     transaction_selector = transaction._make_txn_selector()
@@ -169,7 +175,10 @@ def _restart_on_unavailable(
                 iterator = method(
                     request=request,
                     metadata=request_id_manager.metadata_with_request_id(
-                        nth_request, attempt, metadata
+                        nth_request,
+                        attempt,
+                        metadata,
+                        span,
                     ),
                 )
             continue
@@ -745,18 +754,20 @@ class _SnapshotBase(_SessionWrapper):
             extra_attributes=trace_attributes,
             observability_options=getattr(database, "observability_options", None),
             metadata=metadata,
-        ), MetricsCapture():
+        ) as span, MetricsCapture():
             nth_request = getattr(database, "_next_nth_request", 0)
             attempt = AtomicCounter()
 
             def attempt_tracking_method():
-                all_metadata = database.metadata_with_request_id(
-                    nth_request, attempt.increment(), metadata
-                )
                 method = functools.partial(
                     api.partition_read,
                     request=request,
-                    metadata=all_metadata,
+                    metadata=database.metadata_with_request_id(
+                        nth_request,
+                        attempt.increment(),
+                        metadata,
+                        span,
+                    ),
                     retry=retry,
                     timeout=timeout,
                 )
@@ -858,18 +869,20 @@ class _SnapshotBase(_SessionWrapper):
             trace_attributes,
             observability_options=getattr(database, "observability_options", None),
             metadata=metadata,
-        ), MetricsCapture():
+        ) as span, MetricsCapture():
             nth_request = getattr(database, "_next_nth_request", 0)
             attempt = AtomicCounter()
 
             def attempt_tracking_method():
-                all_metadata = database.metadata_with_request_id(
-                    nth_request, attempt.increment(), metadata
-                )
                 method = functools.partial(
                     api.partition_query,
                     request=request,
-                    metadata=all_metadata,
+                    metadata=database.metadata_with_request_id(
+                        nth_request,
+                        attempt.increment(),
+                        metadata,
+                        span,
+                    ),
                     retry=retry,
                     timeout=timeout,
                 )
@@ -1014,19 +1027,18 @@ class Snapshot(_SnapshotBase):
             self._session,
             observability_options=getattr(database, "observability_options", None),
             metadata=metadata,
-        ), MetricsCapture():
+        ) as span, MetricsCapture():
             nth_request = getattr(database, "_next_nth_request", 0)
             attempt = AtomicCounter()
 
             def attempt_tracking_method():
-                all_metadata = database.metadata_with_request_id(
-                    nth_request, attempt.increment(), metadata
-                )
                 method = functools.partial(
                     api.begin_transaction,
                     session=self._session.name,
                     options=txn_selector.begin,
-                    metadata=all_metadata,
+                    metadata=database.metadata_with_request_id(
+                        nth_request, attempt.increment(), metadata, span
+                    ),
                 )
                 return method()
 

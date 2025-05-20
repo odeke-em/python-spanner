@@ -72,7 +72,9 @@ def inject_into_mock_database(mockdb):
     channel_id = 1
     setattr(mockdb, "_channel_id", channel_id)
 
-    def metadata_with_request_id(nth_request, nth_attempt, prior_metadata=[]):
+    def metadata_with_request_id(
+        nth_request, nth_attempt, prior_metadata=[], span=None
+    ):
         nth_req = nth_request.fget(mockdb)
         return _metadata_with_request_id(
             nth_client_id,
@@ -80,6 +82,7 @@ def inject_into_mock_database(mockdb):
             nth_req,
             nth_attempt,
             prior_metadata,
+            span,
         )
 
     setattr(mockdb, "metadata_with_request_id", metadata_with_request_id)
