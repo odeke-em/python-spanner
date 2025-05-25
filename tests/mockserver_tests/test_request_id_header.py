@@ -269,11 +269,12 @@ class TestRequestIDHeader(MockServerTestBase):
         # TODO(@odeke-em): enable this test in the next iteration
         # when we've figured out unary retries with UNAVAILABLE.
         # See https://github.com/googleapis/python-spanner/issues/1379.
-        if True:
+        if False:
             print(
                 "TODO(@odeke-em): enable request_id checking when we figure out propagation for unary requests"
             )
         else:
+            print("\033[32mgot_unary_segments", got_unary_segments, "\033[00m")
             assert got_unary_segments == want_unary_segments
 
     def test_streaming_retryable_error(self):

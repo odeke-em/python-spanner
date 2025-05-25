@@ -35,6 +35,7 @@ from google.cloud.spanner_v1.types import result_set
 from google.cloud.spanner_v1.types import spanner
 from google.cloud.spanner_v1.types import transaction
 from google.cloud.spanner_v1.metrics.metrics_interceptor import MetricsInterceptor
+from google.cloud.spanner_v1.request_id_header import RequestIdHeaderInterceptor
 from google.protobuf import empty_pb2  # type: ignore
 from .base import SpannerTransport, DEFAULT_CLIENT_INFO
 
@@ -148,6 +149,7 @@ class SpannerGrpcTransport(SpannerTransport):
         always_use_jwt_access: Optional[bool] = False,
         api_audience: Optional[str] = None,
         metrics_interceptor: Optional[MetricsInterceptor] = None,
+        request_header_interceptor: Optional[RequestIdHeaderInterceptor] = None,
     ) -> None:
         """Instantiate the transport.
 
@@ -275,6 +277,14 @@ class SpannerGrpcTransport(SpannerTransport):
             self._metrics_interceptor = metrics_interceptor
             self._grpc_channel = grpc.intercept_channel(
                 self._grpc_channel, metrics_interceptor
+            )
+
+        if request_header_interceptor is None:
+            request_header_interceptor = RequestIdHeaderInterceptor()
+
+        if request_header_interceptor is not None:
+            self._grpc_channel = grpc.intercept_channel(
+                self._grpc_channel, request_header_interceptor
             )
 
         self._interceptor = _LoggingClientInterceptor()

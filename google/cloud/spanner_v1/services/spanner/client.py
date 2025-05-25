@@ -14,6 +14,7 @@
 # limitations under the License.
 #
 from collections import OrderedDict
+import inspect
 from http import HTTPStatus
 import json
 import logging as std_logging
@@ -204,6 +205,7 @@ class SpannerClient(metaclass=SpannerClientMeta):
             SpannerTransport: The transport used by the client
                 instance.
         """
+        print("transport.source: \033[35m", inspect.getsource(self._transport), "\033[00m")
         return self._transport
 
     @staticmethod
@@ -955,7 +957,7 @@ class SpannerClient(metaclass=SpannerClientMeta):
         )
         if request is not None and has_flattened_params:
             raise ValueError(
-                "If the `request` argument is set, then none of "
+                "YYY If the `request` argument is set, then none of XXXX"
                 "the individual field arguments should be set."
             )
 
@@ -984,6 +986,7 @@ class SpannerClient(metaclass=SpannerClientMeta):
         self._validate_universe_domain()
 
         # Send the request.
+        # print("\033[32mtransport", inspect.getsource(self._transport), "\033[00m")
         response = rpc(
             request,
             retry=retry,

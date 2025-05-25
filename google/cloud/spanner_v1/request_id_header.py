@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import grpc
 import os
 
 REQ_ID_VERSION = 1  # The version of the x-goog-spanner-request-id spec.
@@ -62,3 +63,9 @@ def parse_request_id(request_id_str):
         nth_request,
         nth_attempt,
     )
+
+
+class RequestIdHeaderInterceptor(grpc.UnaryUnaryClientInterceptor):
+    def intercept_unary_unary(self, continuation, client_call_details, request):
+        print("\033[37minvoked_method.id", hex(id(client_call_details)), "\033[00m", continuation, "call_details.metadata", client_call_details.metadata)
+        return continuation(client_call_details, request)

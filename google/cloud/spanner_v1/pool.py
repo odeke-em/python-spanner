@@ -15,6 +15,7 @@
 """Pools managing shared Session objects."""
 
 import datetime
+import inspect
 import queue
 import time
 
@@ -234,6 +235,7 @@ class FixedSizePool(AbstractSessionPool):
             add_span_event(span, "Session pool is already full", span_event_attributes)
             return
 
+        print("FixedPool.bc called")
         request = BatchCreateSessionsRequest(
             database=database.name,
             session_count=requested_session_count,
@@ -254,6 +256,7 @@ class FixedSizePool(AbstractSessionPool):
                     f"Creating {request.session_count} sessions",
                     span_event_attributes,
                 )
+                print("\033[34m", inspect.getsource(api.batch_create_sessions), "\033[00m")
                 resp = api.batch_create_sessions(
                     request=request,
                     metadata=database.metadata_with_request_id(
@@ -533,6 +536,7 @@ class PingingPool(AbstractSessionPool):
             )
         self._database_role = self._database_role or self._database.database_role
 
+        print("PingingPool.bc called")
         request = BatchCreateSessionsRequest(
             database=database.name,
             session_count=self.size,
